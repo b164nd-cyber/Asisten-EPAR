@@ -60,27 +60,33 @@ async def beli(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{beli_id} tercatat.\nTotal: Rp{total:,}\nStatus: MENUNGGU_VALIDASI"
     )
 
-async def main():
+async def _delete_webhook(token: str):
+    from telegram import Bot
+    bot = Bot(token=token)
+    async with bot:
+        await bot.delete_webhook(drop_pending_updates=True)
+
+
+def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("beli", beli))
 
     # Hapus webhook aktif agar tidak konflik dengan polling
+    # asyncio.run() digunakan HANYA di sini, sebelum run_polling() mengambil alih event loop
     try:
-        await app.bot.delete_webhook(drop_pending_updates=True)
+        asyncio.run(_delete_webhook(TOKEN))
         logger.info("Webhook dihapus, memulai polling...")
     except (NetworkError, TimedOut) as e:
         logger.warning(f"Gagal menghapus webhook (akan tetap lanjut): {e}")
 
-    try:
-        await app.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True,
-        )
-    except (NetworkError, TimedOut) as e:
-        logger.error(f"Koneksi terputus: {e}")
-        raise
+    # run_polling() adalah blocking call yang mengelola event loop-nya sendiri
+    # JANGAN di-await dan JANGAN dibungkus asyncio.run()
+    app.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+    )
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
