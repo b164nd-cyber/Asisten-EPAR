@@ -1,7 +1,7 @@
 from telegram.ext import Application, CommandHandler
 from telegram import Update
 from telegram.ext import ContextTypes
-from telegram.error import NetworkError, TimedOut
+from telegram.error import NetworkError, TimedOut, Conflict
 from datetime import datetime
 import asyncio
 import logging
@@ -88,10 +88,37 @@ def main():
 
     # run_polling() adalah blocking call yang mengelola event loop-nya sendiri
     # JANGAN di-await dan JANGAN dibungkus asyncio.run()
-    app.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True,
-    )
+    # Retry dengan exponential backoff untuk handle Conflict error (instance lain
+    # yang belum fully shutdown atau delay propagasi webhook deletion di Telegram API)
+    MAX_RETRIES = 5
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            app.run_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True,
+            )
+            break  # Keluar dari loop jika polling berjalan normal
+        except Conflict as e:
+            if attempt < MAX_RETRIES:
+                wait_seconds = 2 ** attempt  # 2, 4, 8, 16, 32 detik
+                logger.warning(
+                    f"Conflict error (attempt {attempt}/{MAX_RETRIES}): {e}. "
+                    f"Menunggu {wait_seconds} detik sebelum retry..."
+                )
+                import time
+                time.sleep(wait_seconds)
+
+                # Buat ulang app dan event loop untuk retry yang bersih
+                app = Application.builder().token(TOKEN).build()
+                app.add_handler(CommandHandler("start", start))
+                app.add_handler(CommandHandler("beli", beli))
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            else:
+                logger.error(
+                    f"Conflict error setelah {MAX_RETRIES} percobaan. Bot berhenti: {e}"
+                )
+                raise
 
 if __name__ == "__main__":
     main()
