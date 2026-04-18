@@ -81,6 +81,11 @@ def main():
     except (NetworkError, TimedOut) as e:
         logger.warning(f"Gagal menghapus webhook (akan tetap lanjut): {e}")
 
+    # asyncio.run() menutup event loop setelah selesai, sehingga perlu dibuat
+    # event loop baru agar run_polling() tidak crash dengan RuntimeError
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     # run_polling() adalah blocking call yang mengelola event loop-nya sendiri
     # JANGAN di-await dan JANGAN dibungkus asyncio.run()
     app.run_polling(
