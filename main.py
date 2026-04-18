@@ -1,10 +1,19 @@
 from telegram.ext import Application, CommandHandler
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.error import NetworkError, TimedOut
 from datetime import datetime
+import asyncio
+import logging
 import os
 
 from sheet_service import append_row
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
@@ -51,13 +60,27 @@ async def beli(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{beli_id} tercatat.\nTotal: Rp{total:,}\nStatus: MENUNGGU_VALIDASI"
     )
 
-def main():
+async def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("beli", beli))
 
-    app.run_polling()
+    # Hapus webhook aktif agar tidak konflik dengan polling
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook dihapus, memulai polling...")
+    except (NetworkError, TimedOut) as e:
+        logger.warning(f"Gagal menghapus webhook (akan tetap lanjut): {e}")
+
+    try:
+        await app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+    except (NetworkError, TimedOut) as e:
+        logger.error(f"Koneksi terputus: {e}")
+        raise
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
