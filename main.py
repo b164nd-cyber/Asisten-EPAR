@@ -22,7 +22,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # GANTI USER ID SESUAI TIM KAMU
 # ====================================
 USER_ROLES = {
-    111111111: "owner",        # ganti dengan user ID Telegram kamu
+    @RIFQI_anda: "owner",        # ganti dengan user ID Telegram kamu
     222222222: "operasional",  # ganti dengan user ID orang lapangan
     333333333: "mandor",       # ganti dengan user ID mandor
     444444444: "keuangan",     # ganti dengan user ID keuangan
