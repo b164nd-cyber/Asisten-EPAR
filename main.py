@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 USER_ROLES = {
-    @RIFQI_anda: "owner",
+    628148959: "owner",
     222222222: "operasional",
     333333333: "mandor",
     444444444: "keuangan",
