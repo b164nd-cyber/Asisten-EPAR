@@ -8,8 +8,6 @@ import logging
 import os
 import time
 
-from sheet_service import append_row
-
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -19,21 +17,85 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 
+# ====================================
+# ROLE SYSTEM SEDERHANA
+# GANTI USER ID SESUAI TIM KAMU
+# ====================================
+USER_ROLES = {
+    111111111: "owner",        # ganti dengan user ID Telegram kamu
+    222222222: "operasional",  # ganti dengan user ID orang lapangan
+    333333333: "mandor",       # ganti dengan user ID mandor
+    444444444: "keuangan",     # ganti dengan user ID keuangan
+}
+
+
 def get_display_name(user) -> str:
     if user.username:
         return f"@{user.username}"
     return user.first_name or "User"
 
 
+def get_user_role(user_id: int) -> str | None:
+    return USER_ROLES.get(user_id)
+
+
+def has_role(user_id: int, allowed_roles: list[str]) -> bool:
+    role = get_user_role(user_id)
+    return role in allowed_roles
+
+
+def role_label(user_id: int) -> str:
+    role = get_user_role(user_id)
+    return role if role else "tidak_terdaftar"
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    role = role_label(user.id)
+
     await update.message.reply_text(
-        "Bot jagung aktif 🚀\n"
-        "Gunakan /beli untuk input transaksi beli.\n"
-        "Gunakan /validasi dengan cara reply ke transaksi beli."
+        "Bot jagung aktif 🚀\n\n"
+        f"User: {get_display_name(user)}\n"
+        f"Role: {role}\n\n"
+        "Gunakan /help untuk melihat command."
+    )
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Command tersedia:\n\n"
+        "/start\n"
+        "/help\n"
+        "/role\n"
+        "/beli PakHadi Lampung 8000 4800 cash\n"
+        "/validasi  -> gunakan dengan reply ke pesan transaksi beli\n\n"
+        "Hak akses:\n"
+        "- operasional/owner: /beli\n"
+        "- mandor/owner: /validasi"
+    )
+
+
+async def role_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    await update.message.reply_text(
+        f"Nama: {get_display_name(user)}\n"
+        f"Telegram User ID: {user.id}\n"
+        f"Role: {role_label(user.id)}"
     )
 
 
 async def beli(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    input_by = get_display_name(user)
+
+    if not has_role(user.id, ["operasional", "owner"]):
+        await update.message.reply_text(
+            f"❌ Akses ditolak.\n"
+            f"Role kamu: {role_label(user.id)}\n"
+            f"Hanya operasional/owner yang bisa pakai /beli"
+        )
+        return
+
     if len(context.args) < 5:
         await update.message.reply_text(
             "Format salah.\n"
@@ -43,7 +105,6 @@ async def beli(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     supplier, lokasi, qty_kg, harga, bayar = context.args[:5]
-    input_by = get_display_name(update.effective_user)
 
     try:
         qty_kg = int(qty_kg)
@@ -54,27 +115,6 @@ async def beli(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     total = qty_kg * harga
     beli_id = f"BELI-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Simpan ke Google Sheet
-    append_row(
-        "pembelian",
-        [
-            beli_id,
-            tanggal,
-            supplier,
-            lokasi,
-            qty_kg,
-            harga,
-            total,
-            bayar,
-            "MENUNGGU_VALIDASI",
-            str(update.effective_user.id),
-            "",
-            "",
-            "",
-        ],
-    )
 
     msg = (
         f"📥 {beli_id}\n\n"
@@ -93,9 +133,17 @@ async def beli(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def validasi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    validator = get_display_name(update.effective_user)
+    user = update.effective_user
+    validator = get_display_name(user)
 
-    # Wajib reply ke pesan transaksi
+    if not has_role(user.id, ["mandor", "owner"]):
+        await update.message.reply_text(
+            f"❌ Akses ditolak.\n"
+            f"Role kamu: {role_label(user.id)}\n"
+            f"Hanya mandor/owner yang bisa pakai /validasi"
+        )
+        return
+
     if not update.message.reply_to_message:
         await update.message.reply_text(
             "Gunakan /validasi dengan cara reply ke pesan transaksi beli."
@@ -110,23 +158,12 @@ async def validasi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Ambil ID dari baris pertama, misalnya: "📥 BELI-20260418-001"
     first_line = replied_text.splitlines()[0].strip()
     beli_id = first_line.replace("📥 ", "").strip()
 
     await update.message.reply_text(
         f"✅ {beli_id} VALID\n"
         f"👷 Divalidasi oleh: {validator}"
-    )
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Command tersedia:\n\n"
-        "/start\n"
-        "/help\n"
-        "/beli PakHadi Lampung 8000 4800 cash\n"
-        "/validasi  -> gunakan dengan reply ke pesan transaksi beli"
     )
 
 
@@ -142,6 +179,7 @@ def build_app() -> Application:
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("role", role_command))
     app.add_handler(CommandHandler("beli", beli))
     app.add_handler(CommandHandler("validasi", validasi))
     return app
@@ -153,7 +191,6 @@ def main():
 
     app = build_app()
 
-    # Hapus webhook aktif agar tidak konflik dengan polling
     try:
         asyncio.run(_delete_webhook(TOKEN))
         logger.info("Webhook dihapus, memulai polling...")
